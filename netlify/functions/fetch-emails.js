@@ -11,24 +11,41 @@ exports.handler = async (event) => {
   }
 
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
+    return {
+      statusCode: 405,
+      headers,
+      body: JSON.stringify({ error: 'Method Not Allowed', emails: [], totalAvailable: 0 }),
+    };
   }
 
   let body;
   try {
     body = JSON.parse(event.body);
   } catch {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON' }) };
+    return {
+      statusCode: 400,
+      headers,
+      body: JSON.stringify({ error: 'Invalid JSON', emails: [], totalAvailable: 0 }),
+    };
   }
 
   const { email, appPassword, folder, startIdx, endIdx } = body;
   if (!email || !appPassword || !folder || startIdx == null || endIdx == null) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing fields' }) };
+    return {
+      statusCode: 400,
+      headers,
+      body: JSON.stringify({ error: 'Missing fields', emails: [], totalAvailable: 0 }),
+    };
   }
   if (startIdx < 0 || endIdx < startIdx) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid index range' }) };
+    return {
+      statusCode: 400,
+      headers,
+      body: JSON.stringify({ error: 'Invalid index range', emails: [], totalAvailable: 0 }),
+    };
   }
 
+  // Main logic, everything inside try/catch
   try {
     const connection = await imaps.connect({
       imap: {
@@ -48,6 +65,7 @@ exports.handler = async (event) => {
 
     const messages = await connection.search(['ALL'], { bodies: ['HEADER'], struct: true });
 
+    // Sort newest first
     messages.sort((a, b) => new Date(b.attributes.date) - new Date(a.attributes.date));
 
     const total = messages.length;
@@ -63,19 +81,24 @@ exports.handler = async (event) => {
 
     connection.end();
 
-    return { statusCode: 200, headers, body: JSON.stringify({ emails: results, totalAvailable: total, error: null }) };
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({ emails: results, totalAvailable: total, error: null }),
+    };
   } catch (err) {
     console.error(err);
-    return { statusCode: 500, headers, body: JSON.stringify({ error: err.message || 'Internal Server Error' }) };
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: err.message || 'Internal Server Error', emails: [], totalAvailable: 0 }),
+    };
   }
 };
 
-// ====== Manual header parsing (no mailparser) ======
-
+// ===== Header parsing (unchanged, same as before) =====
 function parseEmailHeaders(headerText, attributes) {
   const lines = headerText.split('\n');
-
-  // Sender IP – SPF header first
   let senderIP = 'NOT FOUND';
   const spfLines = [];
   for (const line of lines) {
@@ -86,7 +109,6 @@ function parseEmailHeaders(headerText, attributes) {
     const m = line.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/);
     if (m) { senderIP = m[1]; break; }
   }
-
   if (senderIP === 'NOT FOUND') {
     const received = [];
     for (const line of lines) {
@@ -99,7 +121,6 @@ function parseEmailHeaders(headerText, attributes) {
     }
   }
 
-  // From
   const fromRaw = extractHeader(headerText, 'from');
   let fromName = 'UNKNOWN', fromEmail = 'UNKNOWN';
   if (fromRaw) {
@@ -114,14 +135,11 @@ function parseEmailHeaders(headerText, attributes) {
   }
   const domain = fromEmail.includes('@') ? fromEmail.split('@')[1] : 'UNKNOWN';
 
-  // Subject
   const subjectRaw = extractHeader(headerText, 'subject') || '(no subject)';
   const subject = decodeMimeWords(subjectRaw);
 
-  // Date
   const receivedDate = attributes.date ? new Date(attributes.date).toISOString() : new Date().toISOString();
 
-  // Auth results
   const hdrLower = headerText.toLowerCase();
   let spf = 'NOT FOUND';
   if (/spf\s*=\s*pass/i.test(hdrLower) || /received-spf:\s*pass/i.test(hdrLower)) spf = 'PASS';
