@@ -1,0 +1,7 @@
+{
+  "name": "email-header-analyzer",
+  "version": "1.0.0",
+  "dependencies": {
+    "imap-simple": "^4.3.0"
+  }
+}
