@@ -136,7 +136,7 @@
       </div>
       <div class="control-group">
         <label>End Index (incl.)</label>
-        <input type="number" id="endIdx" value="100" min="0" step="1">
+        <input type="number" id="endIdx" value="2" min="0" step="1">
       </div>
       <button onclick="fetchEmails()">🔍 Fetch & Analyze</button>
       <button class="btn-copy" onclick="copyAllIPs()">📋 Copy visible IPs</button>
@@ -205,18 +205,25 @@
         });
 
         const result = await response.json();
+
+        // If the server returned an error message, show it
         if (result.error) {
           showMessage('Error: ' + result.error, true);
+          currentData = [];                // avoid undefined
+          applyFilters();                 // empty table
           return;
         }
 
-        currentData = result.emails;
+        // Successful response – emails array guaranteed by updated function
+        currentData = result.emails || [];
         document.getElementById('info').innerText =
-          `Showing ${currentData.length} of ${result.totalAvailable} total messages.`;
+          `Showing ${currentData.length} of ${result.totalAvailable || 0} total messages.`;
         applyFilters();
         showMessage('', false);
       } catch (err) {
         showMessage('Network or server error: ' + err.message, true);
+        currentData = [];
+        applyFilters();
       }
     }
 
