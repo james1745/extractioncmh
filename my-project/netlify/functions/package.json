@@ -1,8 +1,0 @@
-{
-  "name": "email-fetcher-fn",
-  "version": "1.0.0",
-  "dependencies": {
-    "imap-simple": "^4.3.0",
-    "mailparser": "^3.6.5"
-  }
-}
