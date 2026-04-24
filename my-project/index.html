@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Email Header Analyzer – Gmail IMAP</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f0f2f5;
+      color: #333;
+    }
+    .header {
+      background: #1a1a2e;
+      color: white;
+      padding: 15px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header h1 { font-size: 1.5rem; font-weight: 500; }
+    .container { padding: 20px 30px; }
+    .controls {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      align-items: flex-end;
+    }
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .control-group label { font-size: 0.8rem; color: #666; font-weight: 500; }
+    select, input[type="number"], input[type="text"], input[type="password"] {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    button {
+      padding: 8px 20px;
+      background: #16213e;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    button:hover { background: #0f3460; }
+    .btn-copy { background: #e94560; }
+    .btn-copy:hover { background: #c23152; }
+    .search-bar {
+      width: 100%;
+      margin: 15px 0 10px 0;
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    .table-container {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1000px;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+    th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #16213e;
+      cursor: pointer;
+      user-select: none;
+    }
+    th:hover { background: #e9ecef; }
+    .filter-input {
+      width: 100%;
+      padding: 4px 6px;
+      border: 1px solid #ddd;
+      border-radius: 3px;
+      font-size: 0.75rem;
+      margin-top: 2px;
+    }
+    .status-pass { color: #28a745; font-weight: bold; }
+    .status-fail { color: #dc3545; font-weight: bold; }
+    .status-notfound { color: #6c757d; }
+    .message { padding: 10px 0; }
+    .error { color: #dc3545; }
+    .total-info { font-size: 0.9rem; color: #555; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>📧 Gmail Header Analyzer (IMAP)</h1>
+    <span style="font-size:0.9rem">Multi‑account ready</span>
+  </div>
+
+  <div class="container">
+    <div class="controls">
+      <div class="control-group">
+        <label>Email</label>
+        <input type="text" id="email" placeholder="you@gmail.com">
+      </div>
+      <div class="control-group">
+        <label>App Password</label>
+        <input type="password" id="appPassword" placeholder="16‑char password">
+      </div>
+      <div class="control-group">
+        <label>Folder</label>
+        <select id="folderSelect">
+          <option value="inbox">Inbox</option>
+          <option value="spam">Spam</option>
+        </select>
+      </div>
+      <div class="control-group">
+        <label>Start Index</label>
+        <input type="number" id="startIdx" value="0" min="0" step="1">
+      </div>
+      <div class="control-group">
+        <label>End Index (incl.)</label>
+        <input type="number" id="endIdx" value="100" min="0" step="1">
+      </div>
+      <button onclick="fetchEmails()">🔍 Fetch & Analyze</button>
+      <button class="btn-copy" onclick="copyAllIPs()">📋 Copy visible IPs</button>
+    </div>
+
+    <div id="info" class="total-info"></div>
+    <input type="text" id="globalSearch" class="search-bar" placeholder="🔍 Global search across all columns..." oninput="applyFilters()">
+
+    <div class="table-container">
+      <table id="resultsTable">
+        <thead>
+          <tr>
+            <th>Sender IP</th>
+            <th>Domain</th>
+            <th>From Name</th>
+            <th onclick="sortByDate()" style="cursor:pointer;">Received Date ⬍</th>
+            <th>SPF</th>
+            <th>DKIM</th>
+            <th>DMARC</th>
+            <th>Subject</th>
+          </tr>
+          <tr id="filterRow">
+            <th><input class="filter-input" placeholder="Filter IP" oninput="applyFilters()" data-col="0"></th>
+            <th><input class="filter-input" placeholder="Filter domain" oninput="applyFilters()" data-col="1"></th>
+            <th><input class="filter-input" placeholder="Filter name" oninput="applyFilters()" data-col="2"></th>
+            <th></th>
+            <th><input class="filter-input" placeholder="PASS/FAIL" oninput="applyFilters()" data-col="4"></th>
+            <th><input class="filter-input" placeholder="PASS/FAIL" oninput="applyFilters()" data-col="5"></th>
+            <th><input class="filter-input" placeholder="PASS/FAIL" oninput="applyFilters()" data-col="6"></th>
+            <th><input class="filter-input" placeholder="Filter subject" oninput="applyFilters()" data-col="7"></th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+    <div id="message" class="message"></div>
+  </div>
+
+  <script>
+    let currentData = [];
+    let sortAscending = true;
+
+    async function fetchEmails() {
+      const email = document.getElementById('email').value.trim();
+      const appPassword = document.getElementById('appPassword').value.trim();
+      const folder = document.getElementById('folderSelect').value;
+      const startIdx = parseInt(document.getElementById('startIdx').value, 10);
+      const endIdx = parseInt(document.getElementById('endIdx').value, 10);
+
+      if (!email || !appPassword) {
+        showMessage('Please enter email and app password.', true);
+        return;
+      }
+      if (isNaN(startIdx) || isNaN(endIdx) || startIdx < 0 || endIdx < startIdx) {
+        showMessage('Invalid index range (0 ≤ start ≤ end).', true);
+        return;
+      }
+
+      showMessage('Connecting to Gmail and fetching headers…', false);
+
+      try {
+        const response = await fetch('/.netlify/functions/fetch-emails', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, appPassword, folder, startIdx, endIdx })
+        });
+
+        const result = await response.json();
+        if (result.error) {
+          showMessage('Error: ' + result.error, true);
+          return;
+        }
+
+        currentData = result.emails;
+        document.getElementById('info').innerText =
+          `Showing ${currentData.length} of ${result.totalAvailable} total messages.`;
+        applyFilters();
+        showMessage('', false);
+      } catch (err) {
+        showMessage('Network or server error: ' + err.message, true);
+      }
+    }
+
+    function showMessage(text, isError) {
+      const msgDiv = document.getElementById('message');
+      msgDiv.innerText = text;
+      msgDiv.className = isError ? 'error' : '';
+    }
+
+    function applyFilters() {
+      const globalQuery = document.getElementById('globalSearch').value.toLowerCase().trim();
+      const filterInputs = document.querySelectorAll('#filterRow .filter-input');
+      const colFilters = {};
+      filterInputs.forEach(inp => {
+        colFilters[inp.dataset.col] = inp.value.toLowerCase().trim();
+      });
+
+      const filtered = currentData.filter(row => {
+        const rowValues = [
+          row.senderIP,
+          row.domain,
+          row.fromName,
+          new Date(row.receivedDate).toLocaleString(),
+          row.spf,
+          row.dkim,
+          row.dmarc,
+          row.subject
+        ];
+
+        if (globalQuery) {
+          const matchG = rowValues.some(val =>
+            (val || '').toString().toLowerCase().includes(globalQuery)
+          );
+          if (!matchG) return false;
+        }
+
+        for (let colIdx in colFilters) {
+          const fVal = colFilters[colIdx];
+          if (!fVal) continue;
+          const cellVal = (rowValues[colIdx] || '').toString().toLowerCase();
+          if (!cellVal.includes(fVal)) return false;
+        }
+        return true;
+      });
+
+      renderTable(filtered);
+    }
+
+    function renderTable(data) {
+      const tbody = document.getElementById('tableBody');
+      tbody.innerHTML = '';
+      data.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${row.senderIP}</td>
+          <td>${row.domain}</td>
+          <td>${row.fromName}</td>
+          <td>${new Date(row.receivedDate).toLocaleString()}</td>
+          <td class="${getStatusClass(row.spf)}">${row.spf}</td>
+          <td class="${getStatusClass(row.dkim)}">${row.dkim}</td>
+          <td class="${getStatusClass(row.dmarc)}">${row.dmarc}</td>
+          <td title="${escapeHtml(row.subject)}">${escapeHtml(row.subject.substring(0, 50))}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function getStatusClass(status) {
+      if (status === 'PASS') return 'status-pass';
+      if (status === 'FAIL') return 'status-fail';
+      return 'status-notfound';
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.innerText = text;
+      return div.innerHTML;
+    }
+
+    function sortByDate() {
+      sortAscending = !sortAscending;
+      currentData.sort((a, b) => {
+        const da = new Date(a.receivedDate).getTime();
+        const db = new Date(b.receivedDate).getTime();
+        return sortAscending ? da - db : db - da;
+      });
+      applyFilters();
+    }
+
+    function copyAllIPs() {
+      const ips = [];
+      document.querySelectorAll('#tableBody tr').forEach(tr => {
+        const ipCell = tr.cells[0];
+        if (ipCell) ips.push(ipCell.innerText.trim());
+      });
+      if (ips.length === 0) {
+        showMessage('No IPs to copy.', true);
+        return;
+      }
+      navigator.clipboard.writeText(ips.join('\n')).then(() => {
+        showMessage('Copied ' + ips.length + ' IP(s) to clipboard.', false);
+      }).catch(err => {
+        showMessage('Failed to copy: ' + err, true);
+      });
+    }
+  </script>
+</body>
+</html>
